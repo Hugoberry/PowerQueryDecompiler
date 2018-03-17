@@ -1,3 +1,4 @@
+(fn) =>
 let
     //  Entry point for routing the calls for various AST node "Kind"s 
     handleExp = (x) =>
@@ -7,7 +8,6 @@ let
                 if (kind = "ElementAccess") then elementAccessExp(x) else
                 if (kind = "If") then ifExp(x) else
                 if (kind = "Binary") then binaryExp(x) else
-                // I bet there are unary kinds 
                 if (kind = "FieldAccess") then fieldAccessExp(x) else
                 if (kind = "Identifier") then identifierExp(x) else
                 if (kind = "Constant") then constantExp(x) else
@@ -94,16 +94,9 @@ let
     let
         members = x[Members]
     in 
-        List.Transform(members,
-                        each Text.Format("#{0} = #{1}",
-                                        {_[Name],handleExp(_[Value])})
-                        ),
-    
-    // Function to decompile
-    fn = List.Range,
-    // Getting a "shalow" view on the AST
+        List.Transform(members,each Text.Format("#{0} = #{1}",{_[Name],handleExp(_[Value])})),
+
     AST = Value.ResourceExpression(fn)[Expression][Arguments]{0}[Function][Expression][Expression],
-    // Start
     expression = run(AST)
 in
     expression
