@@ -1,6 +1,6 @@
 # Power Query Decompiler
 This repository contains a proof of concept on decompiling Power Query (M) functions.
-<img src="img/DecompileCall.PNG" width="100">
+![Output](img/DecompileCall.PNG)
 
 ## Structure
 
