@@ -1,5 +1,6 @@
 let
     //  Entry point for routing the calls for various AST node "Kind"s 
+    // TODO: record
     // TODO: unary
     // TODO: throw
     handleExp = (x) =>
@@ -12,9 +13,30 @@ let
                 if (kind = "FieldAccess") then fieldAccessExp(x) else
                 if (kind = "Identifier") then identifierExp(x) else
                 if (kind = "Constant") then constantExp(x) else
+                if (kind = "Record") then recordExp(x) else
+                if (kind = "Unary") then unaryExp(x) else
+                if (kind = "Throw") then throwExp(x) else
                 Text.Format("Unkonw Kind: #{0}",{kind})
     in
         expr,
+    
+    recordExp = (x) =>
+    let 
+        z = ...
+    in
+        z,
+
+    unaryExp = (x) =>
+    let 
+        z = ...
+    in
+        z,
+
+    throwExp = (x) =>
+    let 
+        z = ...
+    in
+        z,
 
     // "Invocation" node handling
     invocationExp = (x) => 
@@ -103,7 +125,10 @@ let
     // Function to decompile
     fn = List.Range,
     // Getting a "shalow" view on the AST
-    AST = Value.ResourceExpression(fn)[Expression][Arguments]{0}[Function][Expression][Expression],
+    // TODO: replace with a search
+    AST = 
+    try Value.ResourceExpression(fn)[Expression][Function][Expression] otherwise 
+            Value.ResourceExpression(fn)[Expression][Arguments]{0}[Function][Expression][Expression],
     // Start
     expression = run(AST)
 in
