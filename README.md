@@ -1,10 +1,18 @@
 # Power Query Decompiler
 This repository contains a proof of concept on decompiling Power Query (M) functions.
-![Output](img/DecompileCall.PNG "Output")
+![Output](img/DecompileCall.PNG width="100")
 
 ## Structure
 
 `AST.pq` - a deep call to `Value.ResourceExpression` in order to demo how the Abstract Syntax Tree (AST) looks for  `List.Range` 
+```
+=Value.ResourceExpression(List.Range)
+    [Expression]
+        [Arguments]{0}
+            [Function]
+                [Expression]
+                    [Expression]
+```
 
 `AST2json.pq` - serializing the output from `Value.ResourceExpression` to `JSON` 
 

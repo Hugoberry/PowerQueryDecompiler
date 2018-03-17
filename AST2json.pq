@@ -8,5 +8,5 @@ let
         else if _ is null then "null"
         else if _ is list then List.Accumulate(_,{},(s,c)=>s&{@trace(c)})
         else if _ is record then List.Accumulate(Record.FieldNames(_),[],(s,c)=>Record.AddField(s,c,@trace(Record.Field(_,c))))
-        else Text.From(_),
-out = Json.FromValue(trace(resource))
+        else Text.From(_)
+in Json.FromValue(trace(resource))
