@@ -1,5 +1,7 @@
 let
     //  Entry point for routing the calls for various AST node "Kind"s 
+    // TODO: unary
+    // TODO: throw
     handleExp = (x) =>
     let
         kind = x[Kind],
@@ -7,7 +9,6 @@ let
                 if (kind = "ElementAccess") then elementAccessExp(x) else
                 if (kind = "If") then ifExp(x) else
                 if (kind = "Binary") then binaryExp(x) else
-                // I bet there are unary kinds 
                 if (kind = "FieldAccess") then fieldAccessExp(x) else
                 if (kind = "Identifier") then identifierExp(x) else
                 if (kind = "Constant") then constantExp(x) else
