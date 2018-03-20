@@ -1,7 +1,5 @@
 let
     //  Entry point for routing the calls for various AST node "Kind"s 
-    // TODO: record
-    // TODO: unary
     // TODO: throw
     handleExp = (x) =>
     let
@@ -20,18 +18,30 @@ let
     in
         expr,
     
+    // Handle records
     recordExp = (x) =>
     let 
-        z = ...
+        members = x[Members],
+        lines   = List.Transform(members,
+                        each Text.Format("#{0} = #{1}",
+                                        {_[Name],handleExp(_[Value])})
+                        )
     in
-        z,
+        Text.Combine(lines,"#(cr)#(lf)"),
 
-    unaryExp = (x) =>
+    // Handle Unary expressions
+    unaryExp = (x) => 
     let 
-        z = ...
-    in
-        z,
+        op = x[Operator],
+        inExp = x[Expression],
+        kind = inExp[Kind],
+        exp = if (op = "Not") then "not (" & handleExp(inExp) & ")" else 
+               if (op = "Negative") then "-(" & handleExp(inExp) & ")" else
+                   handleExp(inExp)
+    in 
+        exp,
 
+    // Throw
     throwExp = (x) =>
     let 
         z = ...
