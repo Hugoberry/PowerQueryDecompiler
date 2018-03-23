@@ -14,6 +14,7 @@ let
                 if (kind = "Record") then recordExp(x) else
                 if (kind = "Unary") then unaryExp(x) else
                 if (kind = "Throw") then throwExp(x) else
+                if (kind = "Function") then funcExp(x) else
                 Text.Format("Unkonw Kind: #{0}",{kind})
     in
         expr,
@@ -42,11 +43,10 @@ let
         exp,
 
     // Throw
-    throwExp = (x) =>
-    let 
-        z = ...
-    in
-        z,
+    throwExp = (x) =>Text.Format("error #{0}", handleExp(x[Expression])),
+
+    // Function kind
+    funcExp = (x) =>"[function]",
 
     // "Invocation" node handling
     invocationExp = (x) => 
