@@ -56,6 +56,57 @@ let
     in
         List.First(List.RemoveNulls({sharedName, docName, resName}), "function"),
 
+    // Classify a runtime type value into its primitive kind via Type.Is.
+    // Structure (list item types, record fields, function signatures) is
+    // still unrecoverable, but the primitive kind + nullability is enough
+    // for `as` ascriptions, which only allow nullable primitive types.
+    typeName = (t as type) as text =>
+    let
+        prims = {
+            [P = type null,         N = "null"],
+            [P = type logical,      N = "logical"],
+            [P = type number,       N = "number"],
+            [P = type text,         N = "text"],
+            [P = type binary,       N = "binary"],
+            [P = type date,         N = "date"],
+            [P = type time,         N = "time"],
+            [P = type datetime,     N = "datetime"],
+            [P = type datetimezone, N = "datetimezone"],
+            [P = type duration,     N = "duration"],
+            [P = type list,         N = "list"],
+            [P = type record,       N = "record"],
+            [P = type table,        N = "table"],
+            [P = type function,     N = "function"],
+            [P = type type,         N = "type"]
+        },
+        hit = List.First(
+                  List.Select(prims, (p) => try Type.Is(t, p[P]) otherwise false),
+                  null)
+    in
+        if hit = null then "any" else hit[N],
+
+    // Render a runtime type value as a type expression: `type nullable text`
+    typeText = (t as type) as text =>
+    let
+        base = typeName(try Type.NonNullable(t) otherwise t),
+        nn   = (try Type.IsNullable(t) otherwise false) and base <> "any"
+    in
+        "type " & (if nn then "nullable " else "") & base,
+
+    // " as ..." ascription for a harvested type value; "" when unknown or
+    // `any`. `optional` parameters are implicitly nullable, so the nullable
+    // prefix is dropped there.
+    ascription = (t, forOptional as logical) as text =>
+        if t = null then ""
+        else
+        let
+            base = typeName(try Type.NonNullable(t) otherwise t),
+            nn   = (try Type.IsNullable(t) otherwise false)
+                   and not forOptional and base <> "any"
+        in
+            if base = "any" then ""
+            else " as " & (if nn then "nullable " else "") & base,
+
     // Render a plain M value (not an AST node) as an M source literal
     literal = (v) as text =>
         if v = null then "null"
@@ -72,7 +123,7 @@ let
                       ", ")
                 & "]"
         else if v is function then functionRef(functionName(v))
-        else if v is type then "type any"  // opaque: type values can't be introspected here
+        else if v is type then typeText(v)  // primitive kind only; structure is lost
         else Text.From(v),
 
     // ==================== operators and precedence ====================
@@ -121,10 +172,41 @@ let
 
     // ===================== harness normalisation ======================
 
+    // Is f a Constant node holding a compiler harness function handle?
+    // Two observed variants: a genuinely unnamed handle (functionName gives
+    // the "function" sentinel) and, on newer engines, a handle that is
+    // reference-equal to Value.As in #shared. Safe either way: real library
+    // references compile to ElementAccess into the constant pool, never to
+    // a Constant-held handle, so user code cannot match this test.
+    isHarnessFn = (f) =>
+        (try f[Kind] otherwise null) = "Constant"
+        and (try f[Value] is function otherwise false)
+        and List.Contains({"function", "Value.As"},
+                          try functionName(f[Value]) otherwise "?"),
+
+    // Extract the runtime type value out of a harness typeInfo argument.
+    // Observed packagings: Constant(type), List{Constant(type)}, and either
+    // of those wrapped in a further 1-arg harness invocation (normalize
+    // removes that layer). Returns null when the shape is not recognised.
+    typeFromInfo = (node) =>
+    let
+        n     = normalize(node),
+        kind  = try n[Kind] otherwise null,
+        inner = if kind = "List" and List.Count(n[Members]) = 1
+                then normalize(n[Members]{0})
+                else n
+    in
+        if (try inner[Kind] otherwise null) = "Constant"
+           and (try inner[Value] is type otherwise false)
+        then inner[Value]
+        else null,
+
     // Strip the runtime type-checking harness before rendering a node:
     //  * wrapper(value) / wrapper(value, typeInfo) -> value, where wrapper is
-    //    an invocation of an UNNAMED constant function
+    //    a harness invocation (see isHarnessFn)
     //  * (p1, .., pn) => body applied to exactly (p1, .., pn) -> body
+    //    (the arguments may themselves be harness-wrapped: they are
+    //    normalized before comparison)
     // Both patterns are produced only by the compiler; named library calls go
     // through ElementAccess, so real code is not affected.
     normalize = (x) =>
@@ -138,9 +220,7 @@ let
             fKind = try f[Kind] otherwise null,
             args  = x[Arguments],
             isWrapper =
-                fKind = "Constant"
-                and (try f[Value] is function otherwise false)
-                and (try functionName(f[Value]) otherwise "?") = "function"
+                isHarnessFn(f)
                 and (List.Count(args) = 1 or List.Count(args) = 2),
             betaBody =
                 if fKind <> "Function" then null
@@ -263,7 +343,7 @@ let
             try
                 let item = coll[Value]{key[Value]}
                 in  if item is function then functionRef(functionName(item))
-                    else if item is type then "type any"
+                    else if item is type then typeText(item)
                     else literal(item)
             otherwise null
     in
@@ -342,22 +422,57 @@ let
 
     funcExp = (x, env) =>
     let
-        ft     = try x[FunctionType] otherwise null,
-        params = if ft <> null then ft[Parameters] else {},
-        min    = try Number.From(ft[Min]) otherwise List.Count(params),
+        ft      = try x[FunctionType] otherwise null,
+        params  = if ft <> null then ft[Parameters] else {},
+        min     = try Number.From(ft[Min]) otherwise List.Count(params),
+        rawBody = x[Expression],
+
+        // Harvest type ascriptions from the harness before normalize strips
+        // it. Full shape:
+        //   wrapper(((p1..pn) => body)(wrapper(p1, t1), .., wrapper(pn, tn)),
+        //           tRet)
+        // Every piece is optional; unrecognised shapes just yield nulls and
+        // the signature renders untyped, exactly as before.
+        outerArgN =
+            if (try rawBody[Kind] otherwise null) = "Invocation"
+               and isHarnessFn(try rawBody[Function] otherwise null)
+            then List.Count(rawBody[Arguments])
+            else 0,
+        outerIsWrapper = outerArgN = 1 or outerArgN = 2,
+        returnT   = if outerArgN = 2 then typeFromInfo(rawBody[Arguments]{1})
+                    else null,
+        innerApp  = if outerIsWrapper then rawBody[Arguments]{0} else rawBody,
+        innerArgs = try innerApp[Arguments] otherwise null,
+        paramTs   =
+            if (try innerApp[Kind] otherwise null) = "Invocation"
+               and (try innerApp[Function][Kind] otherwise null) = "Function"
+               and innerArgs <> null
+               and List.Count(innerArgs) = List.Count(params)
+            then List.Transform(
+                     List.Positions(params),
+                     (i) => let a = innerArgs{i}
+                            in  if (try a[Kind] otherwise null) = "Invocation"
+                                   and isHarnessFn(try a[Function] otherwise null)
+                                   and List.Count(a[Arguments]) = 2
+                                then typeFromInfo(a[Arguments]{1})
+                                else null)
+            else List.Transform(params, each null),
+
         names  = List.Transform(
                      List.Positions(params),
                      (i) => (if i >= min then "optional " else "")
-                            & quoteIdentifier(params{i}[Identifier])),
-        body0  = normalize(x[Expression]),
+                            & quoteIdentifier(params{i}[Identifier])
+                            & ascription(paramTs{i}, i >= min)),
+        retAsc = ascription(returnT, false),
+        body0  = normalize(rawBody),
         body   = handleExp(body0, env),
         isEach = List.Count(params) = 1 and min = 1
                  and params{0}[Identifier] = "_"
     in
         if isEach then "each " & body
         else if isDesugaredLet(body0)
-             then "(" & Text.Combine(names, ", ") & ") =>#(cr,lf)" & body
-        else "(" & Text.Combine(names, ", ") & ") => " & body,
+             then "(" & Text.Combine(names, ", ") & ")" & retAsc & " =>#(cr,lf)" & body
+        else "(" & Text.Combine(names, ", ") & ")" & retAsc & " => " & body,
 
     // ========================== dispatcher ===========================
 
